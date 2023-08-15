@@ -35,7 +35,7 @@ type Sharding struct {
 	_tables []interface{}
 }
 
-//  Config specifies the configuration for sharding.
+// Config specifies the configuration for sharding.
 type Config struct {
 	// When DoubleWrite enabled, data will double write to both main table and sharding table.
 	DoubleWrite bool
@@ -107,23 +107,43 @@ func Register(config Config, tables ...interface{}) *Sharding {
 	}
 }
 
-func (s *Sharding) compile() error {
-	if s.configs == nil {
-		s.configs = make(map[string]Config)
+func NewSharding(config Config) *Sharding {
+	return &Sharding{
+		configs: make(map[string]Config),
+		_config: config,
 	}
-	for _, table := range s._tables {
-		if t, ok := table.(string); ok {
-			s.configs[t] = s._config
+}
+
+func (s *Sharding) RegisterDefault(tables ...interface{}) *Sharding {
+	for _, v := range tables {
+		s.RegisterOne(s._config, v)
+	}
+	return s
+}
+
+func (s *Sharding) Register(config Config, tables ...interface{}) *Sharding {
+	for _, v := range tables {
+		s.RegisterOne(config, v)
+	}
+	return s
+}
+
+func (s *Sharding) RegisterOne(config Config, table interface{}) *Sharding {
+	if t, ok := table.(string); ok {
+		s.configs[t] = config
+	} else {
+		stmt := &gorm.Statement{DB: s.DB}
+		if err := stmt.Parse(table); err == nil {
+			s.configs[stmt.Table] = s._config
 		} else {
-			stmt := &gorm.Statement{DB: s.DB}
-			if err := stmt.Parse(table); err == nil {
-				s.configs[stmt.Table] = s._config
-			} else {
-				return err
-			}
+			println(err)
+			return s
 		}
 	}
+	return s
+}
 
+func (s *Sharding) compile() error {
 	for t, c := range s.configs {
 		if c.NumberOfShards > 1024 && c.PrimaryKeyGenerator == PKSnowflake {
 			panic("Snowflake NumberOfShards should less than 1024")
